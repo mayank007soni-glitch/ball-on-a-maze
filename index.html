@@ -241,6 +241,18 @@ const ROUNDED=[
 ];
 const GRID=[
   ["###################","#S   #   #   #   G#","### ### # ### ### #","#   #   #   #   # #","# ### ### ### ### #","#   #   #   #   # #","### # ### # ### # #","#   #     #     # #","###################"],
+  // extra final level to make 30
+ [
+  "#############################",
+  "#S   # #   #   ###   #   # G#",
+  "### # # # # # # # # ### # ###",
+  "#   #   #   #   #   #   #   #",
+  "# ### ### # ### # ### ### ###",
+  "#   #   # #   # #   #   #   #",
+  "### # ### ### # ### ### # ###",
+  "#   #   #   # #   #   # #   #",
+  "#############################"
+],
   ["###############","#S     #     G#","# ### ### ### #","#   #   #   # #","### # ### # # #","#   #   # #   #","# ### # # ### #","#   H         #","###############"],
   ["###################","#S   #   #   #   G#","### # # ### # ### #","#   # #   # #   # #","# ### ### ### ### #","#     #  H  #     #","### # ### # ### # #","# H #   #   #   # #","###################"],
   ["#####################","#S   #   #   #   # G#","### # ### # ### # ###","#   #   # #   # #   #","# ##### # # ### ### #","#  H  # # #   #   # #","##### # # ### # # # #","#     #   # H #   # #","#####################"],
@@ -941,10 +953,7 @@ function drawPreview(arr,box){
 addEventListener('beforeunload',()=>{try{localStorage.setItem('bm_continue',String(level+1));}catch(e){}});
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./service-worker.js?v=20250816a', {
-  scope: './',
-  updateViaCache: 'none'
-});
+    navigator.serviceWorker.register('./service-worker.js?v=20250816a', {scope: './',updateViaCache: 'none'})
       .catch(err => console.log('SW registration failed:', err));
   });
 }
