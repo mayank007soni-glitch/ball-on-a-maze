@@ -1,5 +1,6 @@
 /* Simple, safe cache-first service worker for GitHub Pages */
-const CACHE_VERSION = 'v1.1.0';                         // ← bump when SW changes
+// service-worker.js
+const CACHE_VERSION = 'v1.0.2'; // ← bump this on each release
 const CACHE_NAME    = `ball-maze-${CACHE_VERSION}`;
 
 /* >>> NEW: runtime cache for music files (don’t pre-cache big mp3s) */
