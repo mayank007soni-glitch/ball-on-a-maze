@@ -114,6 +114,7 @@ canvas{display:block;border-radius:18px;touch-action:none;max-width:100%;pointer
       <div class="row" style="margin-top:10px">
         <button id="btnEnableMotion" class="btn">Enable Motion (Tilt)</button>
         <button id="btnCal" class="btn">Calibrate</button>
+        <button id="btnInputMode" class="btn" data-mode="tilt">Input: Tilt</button>
         <button id="btnCloseSet" class="btn">Close</button>
       </div>
       <div class="row" style="margin-top:10px">
@@ -179,12 +180,15 @@ const TAU=Math.PI*2;
       $('app').classList.remove('hidden');
       bootGame();
 
-      /* NEW: keep screen in portrait when supported */
-      try { if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('portrait');
-      } } catch(e) {}
+      /* Keep screen in portrait (more robust) */
+      try {
+        if (screen.orientation?.lock) { screen.orientation.lock('portrait-primary'); }
+        addEventListener('orientationchange', () => {
+          screen.orientation?.lock?.('portrait-primary').catch(()=>{});
+        });
+      } catch(e) {}
 
-      /* NEW: auto-enable motion sensors after Start */
+      /* Auto-enable motion sensors after Start */
       requestMotion()
         .then(() => {
           addEventListener('devicemotion', handleMotion, true);
@@ -228,7 +232,7 @@ const TAU=Math.PI*2;
 let DPR=1,canvas,ctx,rows,cols,cell,padX,padY,walls,start,goal,pits,gridW=0,gridH=0;
 let tileWall=[];
 let ball,t0,elapsed=0,running=false,sens=1.0,level=0,unlocked=parseInt(localStorage.getItem('bm_unlocked')||'1',10)||1;
-let tiltX=0,tiltY=0,rawX=0,rawY=0,smX=0,smY=0,offsetB=0,offsetG=0;
+let tiltX=0,tiltY=0,rawX=0,rawY=0,smX=0,smY=0,offsetB=0,offsetG=0; // (offsetB/G kept but unused now)
 const LP=0.28,DEAD=0.01;
 /* tuned physics */
 const GRAVITY=1600, FRICTION=0.996, ANG_DAMP=0.96, MAX_SPEED=3400, FINGER_K=520, FINGER_MAX_ACC=1400;
@@ -416,7 +420,7 @@ function ensureStartLeftOfGoalStrict(map){
       g[S.r][S.c]='S'; g[G.r][G.c]='G';
       return g.map(row=>row.join(''));
     }
-    for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    for(const [dr,dc] of [[1,0],[ -1,0],[0,1],[0,-1]]){
       const nr=r+dr, nc=c+dc;
       if(!inb(nr,nc)) continue;
       const ch=g[nr][nc];
@@ -588,12 +592,75 @@ function sizeCanvas(){
   canvas.width=Math.floor(availW*DPR); canvas.height=Math.floor(availH*DPR);
 }
 
-/* motion (opt-in) */
-function requestMotion(){if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){return DeviceMotionEvent.requestPermission().then(()=>DeviceOrientationEvent.requestPermission?DeviceOrientationEvent.requestPermission():Promise.resolve('granted'));}else if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){return DeviceOrientationEvent.requestPermission();}return Promise.resolve('granted');}
-function mapOrientation(beta,gamma){const ang=(screen.orientation&&screen.orientation.angle)||window.orientation||0;let x=0,y=0;if(ang===0){x=gamma;y=beta;}else if(ang===90||-270===ang){x=-beta;y=gamma;}else if(ang===180||-180===ang){x=-gamma;y=-beta;}else{x=beta;y=-gamma;}x=clamp((x-offsetG)/45,-1,1);y=clamp((y-offsetB)/45,-1,1);return {x,y};}
-function handleOrientation(e){const m=mapOrientation(e.beta||0,e.gamma||0);rawX=m.x;rawY=m.y;window._lastB=e.beta;window._lastG=e.gamma;}
-function handleMotion(e){const ag=e.accelerationIncludingGravity;if(!ag)return;let x=ag.x||0,y=ag.y||0;const ang=(screen.orientation&&screen.orientation.angle)||window.orientation||0;if(ang===90||-270===ang)[x,y]=[-y,x];else if(ang===180||-180===ang){x=-x;y=-y;}else if(ang===270||-90===ang)[x,y]=[y,-x];rawX=clamp(x/9.8,-1,1);rawY=clamp(-y/9.8,-1,1);}
-(function sensorTick(){smX+=(rawX-smX)*LP;smY+=(rawY-smY)*LP;tiltX=(Math.abs(smX)<DEAD)?0:smX;tiltY=(Math.abs(smY)<DEAD)?0:smY;requestAnimationFrame(sensorTick)})();
+/* ===== MOTION / INPUT (replaced block) ===== */
+let inputMode = localStorage.getItem('bm_input') || 'tilt';     // 'tilt' | 'manual'
+let offsetX = parseFloat(localStorage.getItem('bm_offX') || '0'); // degrees baseline X
+let offsetY = parseFloat(localStorage.getItem('bm_offY') || '0'); // degrees baseline Y
+let lastOriTS = 0;
+
+function requestMotion(){
+  if (typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
+    return DeviceMotionEvent.requestPermission()
+      .then(() => (typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function')
+        ? DeviceOrientationEvent.requestPermission() : 'granted');
+  } else if (typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+    return DeviceOrientationEvent.requestPermission();
+  }
+  return Promise.resolve('granted');
+}
+
+/* Consistent mapping: right+ → +X, down+ → +Y across orientations */
+function mapByOrientation(beta=0, gamma=0){
+  const type = screen.orientation?.type ||
+               ((screen.orientation?.angle===90)  ? 'landscape-primary' :
+                (screen.orientation?.angle===270) ? 'landscape-secondary' :
+                                                     'portrait-primary');
+
+  let ax=0, ay=0; // degrees-like
+  if (type.startsWith('portrait')){
+    if (type.includes('secondary')) { ax = -gamma; ay = -beta; }
+    else                            { ax =  gamma; ay =  beta; }
+  } else {
+    if (type.includes('secondary')) { ax = -beta; ay =  gamma; }
+    else                            { ax =  beta; ay = -gamma; }
+  }
+
+  window._rawAX = ax; window._rawAY = ay; // for calibration
+  return {
+    x: clamp((ax - offsetX)/45, -1, 1),
+    y: clamp((ay - offsetY)/45, -1, 1)
+  };
+}
+
+function handleOrientation(e){
+  const m = mapByOrientation(e.beta ?? 0, e.gamma ?? 0);
+  rawX = m.x; rawY = m.y;
+  lastOriTS = performance.now();
+}
+
+/* Motion fallback only if orientation isn't arriving */
+function handleMotion(e){
+  if (performance.now() - lastOriTS < 120) return;
+  const ag = e.accelerationIncludingGravity; if (!ag) return;
+  const axDeg = Math.atan2( ag.x || 0,  9.8) * 180/Math.PI;
+  const ayDeg = Math.atan2(-(ag.y || 0), 9.8) * 180/Math.PI;
+  const m = { x: clamp((axDeg - offsetX)/45,-1,1), y: clamp((ayDeg - offsetY)/45,-1,1) };
+  rawX = m.x; rawY = m.y;
+}
+
+/* Smooth & honor manual mode */
+(function sensorTick(){
+  const tgtX = (inputMode==='tilt') ? rawX : 0;
+  const tgtY = (inputMode==='tilt') ? rawY : 0;
+
+  smX += (tgtX - smX) * LP;
+  smY += (tgtY - smY) * LP;
+
+  tiltX = (Math.abs(smX) < DEAD) ? 0 : smX;
+  tiltY = (Math.abs(smY) < DEAD) ? 0 : smY;
+
+  requestAnimationFrame(sensorTick);
+})();
 
 /* ===== AUDIO: 6 MP3 bands + synth with top-right mode button ===== */
 let audioMode = localStorage.getItem('bm_audio_mode') || 'synth'; // 'mp3' | 'synth' | 'off'
@@ -684,21 +751,19 @@ function build(i){
 
   let map=LEVELS[level];
 
-  /* >>> FIX 1: make level 5 unique vs level 4, regardless of orientation */
-  if (level===4) {               // 0-based index: level 5
-    map = rotateMapClockwise(map);
-  }
+  /* make level 5 unique vs level 4 */
+  if (level===4) { map = rotateMapClockwise(map); }
 
   const portrait = canvas.height >= canvas.width;
   if (portrait) { map = rotateMapClockwise(map); }
 
   // order matters: set strict S/G, then ensure path, then add traps
-  map = ensureStartLeftOfGoalStrict(map);  // keeps S top-left, G bottom-right
+  map = ensureStartLeftOfGoalStrict(map);
   if (!hasPath(map)) { map = minimallyConnect(map); }
   map = addAntiStraightPits(map);
   map = addTrapsAlongPath(map);
   map = addStraightRunTraps(map);
-  map = guaranteeAtLeastOneR(map);         // ensures ≥1 red hole from L12+
+  map = guaranteeAtLeastOneR(map);
 
   rows=map.length; cols=map[0].length;
 
@@ -898,8 +963,32 @@ function wireUI(){
   $('btnSettings').onclick=()=>$('settings').classList.remove('hidden');
   $('btnCloseSet').onclick=()=>$('settings').classList.add('hidden');
   $('btnEnableMotion').onclick=async()=>{try{await requestMotion();}catch{} addEventListener('deviceorientation',handleOrientation,true); addEventListener('devicemotion',handleMotion,true); alert('Motion enabled. Tilt phone. You can still drag anywhere.');};
-  $('btnCal').onclick=()=>{offsetB=window._lastB||0;offsetG=window._lastG||0;alert('Calibrated to current hold.');};
+
+  // Calibration: zero to your current hold (uses raw degrees saved in _rawAX/_rawAY)
+  $('btnCal').onclick=()=>{
+    offsetX = window._rawAX || 0;
+    offsetY = window._rawAY || 0;
+    localStorage.setItem('bm_offX', String(offsetX));
+    localStorage.setItem('bm_offY', String(offsetY));
+    alert('Calibrated to your current hold.');
+  };
+
+  // Sensitivity slider
   $('sens').oninput=e=>sens=parseFloat(e.target.value);
+
+  // Manual/Tilt toggle
+  const btnInput = $('btnInputMode');
+  const refreshInputLabel = () => {
+    btnInput.dataset.mode = inputMode;
+    btnInput.textContent = 'Input: ' + (inputMode === 'tilt' ? 'Tilt' : 'Manual');
+  };
+  refreshInputLabel();
+  btnInput.onclick = () => {
+    inputMode = (inputMode === 'tilt') ? 'manual' : 'tilt';
+    localStorage.setItem('bm_input', inputMode);
+    refreshInputLabel();
+  };
+
   $('btnReset').onclick=()=>{if(confirm('Reset saved progress?')){localStorage.removeItem('bm_unlocked');localStorage.removeItem('bm_continue');unlocked=1;alert('Progress reset.');}};
   $('btnPreview').onclick=()=>{drawPreview(LEVELS[level],$('previewBox'));$('previewText').textContent=`Previewing level ${level+1}`;$('preview').classList.remove('hidden');};
   $('btnClosePrev').onclick=()=>$('preview').classList.add('hidden');
