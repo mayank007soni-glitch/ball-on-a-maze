@@ -178,6 +178,19 @@ const TAU=Math.PI*2;
       $('introScreen').classList.add('hidden');
       $('app').classList.remove('hidden');
       bootGame();
+
+      /* NEW: keep screen in portrait when supported */
+      try { if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('portrait');
+      } } catch(e) {}
+
+      /* NEW: auto-enable motion sensors after Start */
+      requestMotion()
+        .then(() => {
+          addEventListener('devicemotion', handleMotion, true);
+          addEventListener('deviceorientation', handleOrientation, true);
+        })
+        .catch(()=>{});
     }catch(e){ console.error(e); alert('Startup error: '+e.message); }
   };
   $('startGame').addEventListener('click',go,{passive:false});
@@ -216,9 +229,9 @@ let DPR=1,canvas,ctx,rows,cols,cell,padX,padY,walls,start,goal,pits,gridW=0,grid
 let tileWall=[];
 let ball,t0,elapsed=0,running=false,sens=1.0,level=0,unlocked=parseInt(localStorage.getItem('bm_unlocked')||'1',10)||1;
 let tiltX=0,tiltY=0,rawX=0,rawY=0,smX=0,smY=0,offsetB=0,offsetG=0;
-const LP=.12,DEAD=.03;
+const LP=0.28,DEAD=0.01;
 /* tuned physics */
-const GRAVITY=1200, FRICTION=0.992, ANG_DAMP=0.96, MAX_SPEED=1400, FINGER_K=520, FINGER_MAX_ACC=900;
+const GRAVITY=1600, FRICTION=0.996, ANG_DAMP=0.96, MAX_SPEED=3400, FINGER_K=520, FINGER_MAX_ACC=1400;
 let dragging=false,dragTarget=null,falling=false,fallT=0;
 
 /* ===== visual THEMES ===== */
