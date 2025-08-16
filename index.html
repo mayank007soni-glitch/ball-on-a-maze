@@ -166,11 +166,22 @@ canvas{display:block;border-radius:18px;touch-action:none;max-width:100%;pointer
   </div>
 </section>
 
+<!-- NEW: SFX (replace with your paths if different) -->
+<audio id="sndWin"  src="assets/sfx/win.mp3"   preload="auto"></audio>
+<audio id="sndFail" src="assets/sfx/slurp.mp3" preload="auto"></audio>
+
 <script>
 /* ===== helpers ===== */
 const $=id=>document.getElementById(id);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const TAU=Math.PI*2;
+
+/* NEW: tiny sound helper */
+function playSound(id){
+  const el = $(id);
+  if(!el) return;
+  try { el.currentTime = 0; el.play().catch(()=>{}); } catch(e){}
+}
 
 /* small intro */
 (function(){
@@ -180,13 +191,21 @@ const TAU=Math.PI*2;
       $('app').classList.remove('hidden');
       bootGame();
 
-      /* Keep screen in portrait (more robust) */
-      try {
-        if (screen.orientation?.lock) { screen.orientation.lock('portrait-primary'); }
-        addEventListener('orientationchange', () => {
-          screen.orientation?.lock?.('portrait-primary').catch(()=>{});
-        });
-      } catch(e) {}
+      /* Harder portrait lock: try fullscreen → lock; relock on change */
+      (async () => {
+        try {
+          if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen({navigationUI:'hide'}).catch(()=>{});
+          }
+          if (screen.orientation?.lock) {
+            await screen.orientation.lock('portrait-primary').catch(()=>{});
+          }
+        } catch(e){}
+      })();
+
+      addEventListener('orientationchange', () => {
+        screen.orientation?.lock?.('portrait-primary').catch(()=>{});
+      });
 
       /* Auto-enable motion sensors after Start */
       requestMotion()
@@ -195,6 +214,10 @@ const TAU=Math.PI*2;
           addEventListener('deviceorientation', handleOrientation, true);
         })
         .catch(()=>{});
+
+      /* Ensure WebAudio can run after user gesture */
+      try{ audioAC.resume?.(); }catch(e){}
+
     }catch(e){ console.error(e); alert('Startup error: '+e.message); }
   };
   $('startGame').addEventListener('click',go,{passive:false});
@@ -867,6 +890,8 @@ function step(dt){
   for(const p of pits){
     if(Math.hypot(ball.x-p.x,ball.y-p.y) < p.r-ball.r*.1){
       ball.vx=ball.vy=0; ball.x=start.x; ball.y=start.y; navigator.vibrate&&navigator.vibrate(18);
+      /* NEW: slurp/wrong-hole sound */
+      playSound('sndFail');
     }
   }
   if(Math.hypot(ball.x-goal.x,ball.y-goal.y) < (goal.r-ball.r*0.15)){
@@ -958,7 +983,22 @@ let last=0;function startLoop(){last=0;requestAnimationFrame(loop);}
 function loop(ts){if(!last)last=ts;const dt=Math.min(.032,(ts-last)/1000);last=ts;if(running){elapsed=performance.now()-t0;step(dt);$('time').textContent=(elapsed/1000).toFixed(1);}draw();requestAnimationFrame(loop);}
 
 /* win & UI */
-function win(){running=false;const sec=elapsed/1000,base=8+level*2.6;let stars=1;if(sec<=base)stars=3;else if(sec<=base*1.65)stars=2;$('winTitle').textContent=(level===LEVELS.length-1)?'All levels complete!':'Level complete!';$('winInfo').textContent=`Level ${level+1} • Time ${sec.toFixed(2)}s`;$('winStars').textContent='★'.repeat(stars)+'☆'.repeat(3-stars);$('win').classList.remove('hidden');navigator.vibrate&&navigator.vibrate([60,30,60]);const cur=level+1;if(unlocked<cur+1){unlocked=cur+1;localStorage.setItem('bm_unlocked',String(unlocked));}localStorage.setItem('bm_continue',String(cur+1));}
+function win(){
+  /* NEW: win sound */
+  playSound('sndWin');
+
+  running=false;
+  const sec=elapsed/1000,base=8+level*2.6;let stars=1;
+  if(sec<=base)stars=3;else if(sec<=base*1.65)stars=2;
+  $('winTitle').textContent=(level===LEVELS.length-1)?'All levels complete!':'Level complete!';
+  $('winInfo').textContent=`Level ${level+1} • Time ${sec.toFixed(2)}s`;
+  $('winStars').textContent='★'.repeat(stars)+'☆'.repeat(3-stars);
+  $('win').classList.remove('hidden');
+  navigator.vibrate&&navigator.vibrate([60,30,60]);
+  const cur=level+1;
+  if(unlocked<cur+1){unlocked=cur+1;localStorage.setItem('bm_unlocked',String(unlocked));}
+  localStorage.setItem('bm_continue',String(cur+1));
+}
 function wireUI(){
   $('btnSettings').onclick=()=>$('settings').classList.remove('hidden');
   $('btnCloseSet').onclick=()=>$('settings').classList.add('hidden');
